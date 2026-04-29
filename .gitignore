@@ -1,0 +1,14 @@
+# Binaries
+main
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Local test tokens 
+token.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db

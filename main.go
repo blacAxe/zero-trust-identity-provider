@@ -1,0 +1,62 @@
+package main
+
+import (
+	"log"
+	"net/http"
+
+	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/omar/zero-trust-idp/handlers" // Your handlers package
+)
+
+func secretHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("Congrats Bob! This is top-secret data only visible with a Passkey."))
+}
+
+func main() {
+	// Configure the WebAuthn instance
+	wconfig := &webauthn.Config{
+		RPDisplayName: "Zero Trust IDP",
+		RPID:          "localhost",
+		RPOrigins:     []string{"http://localhost:8080"},
+	}
+
+	webAuthnInstance, err := webauthn.New(wconfig)
+	if err != nil {
+		log.Fatal("Failed to create WebAuthn instance:", err)
+	}
+
+	// Create a NEW ServeMux
+	mux := http.NewServeMux()
+
+	// Static Files (Your HTML/JS)
+	// We use mux.Handle instead of http.Handle
+	fileServer := http.FileServer(http.Dir("./static"))
+	mux.Handle("/", fileServer)
+
+	// Registration Routes (Registered to mux)
+	mux.HandleFunc("/register/begin", func(w http.ResponseWriter, r *http.Request) {
+		handlers.BeginRegistration(w, r, webAuthnInstance)
+	})
+	mux.HandleFunc("/register/finish", func(w http.ResponseWriter, r *http.Request) {
+		handlers.FinishRegistration(w, r, webAuthnInstance)
+	})
+
+	// Login Routes (Registered to mux)
+	mux.HandleFunc("/login/begin", func(w http.ResponseWriter, r *http.Request) {
+		handlers.BeginLogin(w, r, webAuthnInstance)
+	})
+	mux.HandleFunc("/login/finish", func(w http.ResponseWriter, r *http.Request) {
+		handlers.FinishLogin(w, r, webAuthnInstance)
+	})
+
+	// Protected Route
+	// We wrap the secretHandler with our JWTMiddleware
+	mux.HandleFunc("/api/secret-data", handlers.JWTMiddleware(secretHandler))
+
+	// Start the server using our 'mux'
+	log.Println("Server started at http://localhost:8080")
+	err = http.ListenAndServe(":8080", mux)
+	if err != nil {
+		log.Fatal("ListenAndServe Error: ", err)
+	}
+}
