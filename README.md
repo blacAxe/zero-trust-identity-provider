@@ -2,6 +2,9 @@
 
 This is a Go-based authentication server that ditches traditional passwords for **Passkeys (WebAuthn)** and **JWT-based Authorization**. No more "Forgot Password" loops—just biometric security and signed tokens.
 
+## Category
+Security Engineering
+
 ## How it Works
 
 1.  **Biometric Auth:** Users register and login using hardware security keys or built-in biometrics (Fingerprint/FaceID) via the WebAuthn API.
