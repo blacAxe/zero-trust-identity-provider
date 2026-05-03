@@ -74,7 +74,8 @@
 
         if (data.status === "success") {
             // Save the token for later
-            localStorage.setItem("jwt_token", data.token);
+            localStorage.setItem("jwt_token", data.access_token);
+            localStorage.setItem("refresh_token", data.refresh_token);
             
             document.getElementById('status').innerText = `Logged in as ${username}!`;
             document.getElementById('secret-section').style.display = "block"; 

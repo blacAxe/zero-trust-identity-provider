@@ -5,11 +5,14 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"os"
+	"crypto/sha256"
+	"encoding/hex"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var JwtKey = []byte("your_ultra_secret_key_123")
+var JwtKey = []byte(os.Getenv("JWT_SECRET"))
 
 type Claims struct {
 	Username string `json:"username"`
@@ -17,12 +20,12 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateJWT(username string, role string) (string, error) { // Added role param
-	expirationTime := time.Now().Add(24 * time.Hour)
+func GenerateAccessToken(username string, role string) (string, error) {
+	expirationTime := time.Now().Add(15 * time.Minute)
 
 	claims := &Claims{
 		Username: username,
-		Role:     role, // Put the role in the claim
+		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			Issuer:    "zero-trust-idp",
@@ -31,6 +34,15 @@ func GenerateJWT(username string, role string) (string, error) { // Added role p
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(JwtKey)
+}
+
+func GenerateRefreshToken() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+func HashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
 func JWTMiddleware(next http.HandlerFunc) http.HandlerFunc {

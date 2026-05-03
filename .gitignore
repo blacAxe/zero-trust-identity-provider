@@ -1,4 +1,4 @@
-# Binaries
+# Build / binaries
 main
 *.exe
 *.exe~
@@ -6,9 +6,18 @@ main
 *.so
 *.dylib
 
-# Local test tokens 
+# Environment / secrets
+.env
+
+# Local test artifacts
 token.txt
 
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Go build/cache
+bin/
+dist/
+*.test
+coverage.out

@@ -22,7 +22,11 @@ func BeginRegistration(w http.ResponseWriter, r *http.Request, wa *webauthn.WebA
 	// Find or Create User
 	user, err := db.GetUser(username)
 	if err != nil {
-		user = db.CreateUser(username)
+		user, err = db.CreateUser(username)
+		if err != nil {
+			http.Error(w, "Failed to create user", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Generate Registration Options
@@ -50,7 +54,11 @@ func FinishRegistration(w http.ResponseWriter, r *http.Request, wa *webauthn.Web
 		return
 	}
 
-	user, _ := db.GetUser(username)
+	user, err := db.GetUser(username)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusBadRequest)
+		return
+	}
 
 	// Parse the credential response from the browser
 	credential, err := wa.FinishRegistration(user, *sessionData, r)
@@ -61,7 +69,11 @@ func FinishRegistration(w http.ResponseWriter, r *http.Request, wa *webauthn.Web
 
 	// Save the Public Key to the user's account
 	user.AddCredential(*credential)
-	db.SaveUser(user)
+	err = db.SaveUser(user)
+	if err != nil {
+		http.Error(w, "Failed to save user", http.StatusInternalServerError)
+		return
+	}
 
 	w.Write([]byte("Registration Successful! Passkey saved."))
 }

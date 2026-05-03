@@ -5,7 +5,9 @@ import (
 	"net/http"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/omar/zero-trust-idp/handlers" // Your handlers package
+	"github.com/omar/zero-trust-idp/db"
+	"github.com/omar/zero-trust-idp/handlers"
+	"github.com/joho/godotenv"
 )
 
 func secretHandler(w http.ResponseWriter, r *http.Request) {
@@ -13,6 +15,15 @@ func secretHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+
+	godotenv.Load()
+
+	// Initialize DB
+	err := db.InitDB()
+	if err != nil {
+		log.Fatal("DB init failed:", err)
+	}
+
 	// Configure the WebAuthn instance
 	wconfig := &webauthn.Config{
 		RPDisplayName: "Zero Trust IDP",
@@ -28,8 +39,8 @@ func main() {
 	// Create a NEW ServeMux
 	mux := http.NewServeMux()
 
-	// Static Files (Your HTML/JS)
-	// We use mux.Handle instead of http.Handle
+	// Static Files
+	// Use mux.Handle instead of http.Handle
 	fileServer := http.FileServer(http.Dir("./static"))
 	mux.Handle("/", fileServer)
 
@@ -49,11 +60,14 @@ func main() {
 		handlers.FinishLogin(w, r, webAuthnInstance)
 	})
 
+	mux.HandleFunc("/auth/refresh", handlers.RefreshToken)
+	mux.HandleFunc("/auth/logout", handlers.Logout)
+
 	// Protected Route
-	// We wrap the secretHandler with our JWTMiddleware
+	// Wrap the secretHandler with JWTMiddleware
 	mux.HandleFunc("/api/secret-data", handlers.JWTMiddleware(secretHandler))
 
-	// Start the server using our 'mux'
+	// Start the server using 'mux'
 	log.Println("Server started at http://localhost:8080")
 	err = http.ListenAndServe(":8080", mux)
 	if err != nil {

@@ -1,53 +1,209 @@
-# **Zero Trust Identity Provider (IdP)**
-
-## **Category**
-Identity & Access Management (IAM) / Security Engineering
+# Zero Trust Identity Provider (IdP)
 
 ## Category
-Security Engineering
+
+Identity and Access Management (IAM) / Security Engineering
+
+## Overview
+
+This project is a Go-based authentication service that replaces traditional passwords with passkeys using WebAuthn and implements a production-style token lifecycle. It acts as the central identity authority for a zero trust architecture, issuing verifiable identity tokens that can be consumed by downstream services such as a security proxy.
+
+The system is designed to demonstrate how modern authentication systems handle identity, session management, and token security in a realistic backend environment.
+
+---
 
 ## How it Works
-This is a Go-based authentication server that ditches traditional passwords for **Passkeys (WebAuthn)** and **JWT-based Authorization**. It serves as the central identity authority for the **Sentinel Go Security Proxy**, providing biometric-backed security and signed identity tokens.
 
-## **How it Works**
+### Biometric Authentication
 
-* **Biometric Auth:** Users register and login using hardware security keys or built-in biometrics (Fingerprint/FaceID) via the WebAuthn API.
-* **Stateless Identity:** Upon a successful handshake, the server issues a JWT (JSON Web Token) containing the user's identity and role.
-* **Identity Propagation:** These signed tokens are recognized by the Sentinel Proxy, which validates the signature before allowing access to shielded routes.
-* **Zero Trust:** The server trusts nothing by default. Every request to a protected route must prove identity via a valid, signed cryptographic header.
+Users register and authenticate using passkeys through the WebAuthn API. This enables hardware-backed or biometric authentication such as fingerprint or face recognition without relying on passwords.
 
-## **Central Pipeline Integration**
+### Token-Based Identity
 
-This IdP is the first step in the distributed security pipeline:
-1. **Authentication:** User logs in here and receives a JWT.
-2. **Verification:** Sentinel Proxy uses the shared secret key to verify the JWT signature.
-3. **Observability:** User identity (e.g., "Bob") is extracted and sent to the **LumenLog Ingestor** for permanent audit logging in ClickHouse[cite: 3].
+After successful authentication, the server issues a short-lived access token containing the user identity and role. This token is used to access protected resources.
 
-## **Project Structure**
+### Refresh Token Lifecycle
 
-* **`/handlers`**: The engine room. Contains the WebAuthn logic and JWT generation.
-* **`/internal`**: Private crypto and storage logic.
-* **`/db`**: Simple in-memory user persistence.
-* **`/static`**: The frontend playground for testing the login flow.
+In addition to access tokens, the system issues long-lived refresh tokens. These are stored securely in the database and used to obtain new access tokens without requiring the user to authenticate again.
 
-## **Running the Project**
+### Zero Trust Enforcement
 
-### **1. Spin up the server**
-`go run main.go`
+Every request to a protected endpoint must include a valid access token. No session is trusted by default, and all requests are verified through cryptographic validation.
 
-### **2. Access the UI**
-Head to `http://localhost:8080`. Register a passkey, then try to access the "Top Secret Data."
+---
 
-### **3. Test the API via CLI (Windows/PowerShell)**
-You can use the token generated on login to hit the protected proxy route directly:
+## Authentication Flow (Production Design)
 
-`$headers = @{Authorization = "Bearer YOUR_TOKEN_HERE"}; Invoke-RestMethod -Uri "http://localhost:8081/api/secret-data" -Headers $headers`
+### Access Tokens
 
-## **Security Note**
-To ensure the Sentinel Proxy accepts tokens from this IdP, ensure both projects use the same signing key: `your_ultra_secret_key_123`.
+* Short-lived JWTs with a 15 minute expiration
+* Contain user identity and role
+* Used for authenticating API requests
+* Stateless and verified on every request
 
-## **Tech Stack**
-* **Go (Golang)**
-* **WebAuthn** (Passkeys)
-* **JWT** (Stateless Auth)
-* **Vanilla JS** (Frontend)
+### Refresh Tokens
+
+* Long-lived tokens with a 7 day expiration
+* Stored in PostgreSQL as hashed values
+* Used to generate new access tokens
+* Never stored or transmitted in plain text on the server
+
+### Session Management
+
+* Each login creates a session record in the database
+* Refresh tokens are validated against stored sessions
+* Logout deletes the session, immediately invalidating the refresh token
+
+### Security Design Decisions
+
+* Refresh tokens are hashed using SHA256 before storage
+* Access tokens are short-lived to limit exposure
+* WebAuthn provides phishing-resistant authentication
+* Server-side session storage allows explicit revocation
+
+This mirrors the architecture used by real-world identity providers.
+
+---
+
+## Central Pipeline Integration
+
+This IdP is designed to be the entry point in a distributed security pipeline:
+
+1. Authentication
+   The user logs in and receives an access token and refresh token
+
+2. Verification
+   Downstream services verify the access token signature before granting access
+
+3. Observability
+   User identity can be propagated to logging and monitoring systems for auditing
+
+---
+
+## Project Structure
+
+* /handlers
+  Contains authentication logic, WebAuthn flows, token handling, and HTTP endpoints
+
+* /db
+  PostgreSQL integration, user persistence, and session storage
+
+* /internal
+  Cryptographic utilities and supporting logic
+
+* /static
+  Minimal frontend used to test registration, login, and protected routes
+
+---
+
+## Running the Project
+
+### 1. Start PostgreSQL
+
+You can run PostgreSQL using Docker:
+
+```bash
+docker run --name idp-postgres \
+  -e POSTGRES_PASSWORD=password \
+  -e POSTGRES_DB=idp \
+  -p 5432:5432 \
+  -d postgres
+```
+
+---
+
+### 2. Create Required Tables
+
+Connect to the database and run:
+
+```sql
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    credentials JSONB,
+    created_at TIMESTAMP
+);
+
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    refresh_token TEXT,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP
+);
+```
+
+---
+
+### 3. Configure Environment Variables
+
+Create a .env file:
+
+```env
+DB_URL=postgres://postgres:password@localhost:5432/idp?sslmode=disable
+JWT_SECRET=supersecret
+ACCESS_TOKEN_EXPIRY=15m
+REFRESH_TOKEN_EXPIRY=168h
+```
+
+---
+
+### 4. Run the Server
+
+```bash
+go run main.go
+```
+
+---
+
+### 5. Access the Application
+
+Open:
+
+http://localhost:8080
+
+Register a passkey and log in.
+
+---
+
+## Testing the Authentication Flow
+
+### Login
+
+* Generates access token and refresh token
+* Stores refresh token in database (hashed)
+
+### Access Protected Route
+
+* Send access token in Authorization header
+
+### Refresh Token
+
+* Call /auth/refresh with header:
+  X-Refresh-Token: <token>
+* Receive new access token
+
+### Logout
+
+* Call /auth/logout with refresh token
+* Session is deleted from database
+* Future refresh attempts fail
+
+---
+
+## Security Notes
+
+* Refresh tokens are never stored in plain text
+* Access tokens expire quickly to reduce risk
+* Sessions are stored server-side for revocation control
+* WebAuthn eliminates password-based attacks
+
+---
+
+## Tech Stack
+
+* Go (Golang)
+* WebAuthn (Passkeys)
+* PostgreSQL
+* JWT (Access and Refresh Tokens)
+* Vanilla JavaScript (Frontend)

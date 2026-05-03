@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
-	"os"
-	"strings"
+	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/omar/zero-trust-idp/db"
@@ -56,29 +54,39 @@ func FinishLogin(w http.ResponseWriter, r *http.Request, wa *webauthn.WebAuthn) 
 
 	// Determine the role
 	role := "user"
-	if user.WebAuthnName() == "bob" || user.Name == "bob" {
-		role = "user"
+	if user.WebAuthnName() == "bob" {
+		role = "admin"
 	}
 
-	// Generate the token with the role
-	token, err := GenerateJWT(user.Name, role)
+	// Generate access token (short-lived)
+	accessToken, err := GenerateAccessToken(user.WebAuthnName(), role)
 	if err != nil {
-		http.Error(w, "Failed to generate token", 500)
+		http.Error(w, "Failed to generate access token", http.StatusInternalServerError)
 		return
 	}
 
-	// Clean up the session so it can't be reused (Replay Attack protection)
-	delete(sessionDataStore, username)
+	// Generate refresh token (long-lived)
+	refreshToken := GenerateRefreshToken()
 
-	// Send the token back
+	// Hash refresh token before storing
+	hashedToken := HashToken(refreshToken)
+
+	// Store session in DB
+	err = db.CreateSession(
+		string(user.WebAuthnID()),
+		hashedToken,
+		time.Now().Add(7*24*time.Hour), // 7 days
+	)
+	if err != nil {
+		http.Error(w, "Failed to store session", http.StatusInternalServerError)
+		return
+	}
+
+	// 5. Send both tokens back
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status": "success", "token": "` + token + `"}`))
-
-	f, err := os.Create("token.txt")
-	if err != nil {
-		fmt.Println("Error creating file:", err)
-		return
-	}
-	fmt.Fprint(f, strings.TrimSpace(token))
-	f.Close()
+	w.Write([]byte(`{
+		"status": "success",
+		"access_token": "` + accessToken + `",
+		"refresh_token": "` + refreshToken + `"
+	}`))
 }
