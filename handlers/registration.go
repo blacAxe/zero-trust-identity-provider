@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -12,6 +13,9 @@ import (
 var sessionDataStore = make(map[string]*webauthn.SessionData)
 
 func BeginRegistration(w http.ResponseWriter, r *http.Request, wa *webauthn.WebAuthn) {
+	
+	log.Println("HIT /register/begin") // 🔥 ADD THIS
+	
 	query := r.URL.Query()
 	username := query.Get("username")
 	if username == "" {
@@ -22,11 +26,17 @@ func BeginRegistration(w http.ResponseWriter, r *http.Request, wa *webauthn.WebA
 	// Find or Create User
 	user, err := db.GetUser(username)
 	if err != nil {
+		log.Println("GET USER FAILED:", err)
+
 		user, err = db.CreateUser(username)
 		if err != nil {
+			log.Println("CREATE USER FAILED:", err)
 			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return
 		}
+		log.Println("USER CREATED:", username)
+	} else {
+		log.Println("USER FOUND:", username)
 	}
 
 	// Generate Registration Options
@@ -41,6 +51,7 @@ func BeginRegistration(w http.ResponseWriter, r *http.Request, wa *webauthn.WebA
 
 	// Send options to frontend
 	w.Header().Set("Content-Type", "application/json")
+	log.Println("SENDING REGISTRATION OPTIONS")
 	JSONResponse(w, options)
 }
 

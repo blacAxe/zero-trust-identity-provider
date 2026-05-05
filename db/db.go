@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
-	_ "github.com/lib/pq"
 	"github.com/go-webauthn/webauthn/webauthn"
+	_ "github.com/lib/pq"
 )
 
 var DB *sql.DB
@@ -49,8 +50,8 @@ func (u *User) WebAuthnIcon() string                       { return "" }
 func GetUser(username string) (*User, error) {
 	query := `SELECT id, username, credentials FROM users WHERE username=$1`
 
-	var id string
-	var credsJSON []byte
+	var id int64
+	var credsJSON string
 
 	err := DB.QueryRow(query, username).Scan(&id, &username, &credsJSON)
 	if err != nil {
@@ -58,40 +59,50 @@ func GetUser(username string) (*User, error) {
 	}
 
 	var creds []webauthn.Credential
-	json.Unmarshal(credsJSON, &creds)
+
+	if len(credsJSON) > 0 {
+		err := json.Unmarshal([]byte(credsJSON), &creds)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	log.Println("LOADED CREDS:", len(creds))
 
 	return &User{
-		ID:          id,
+		ID:          fmt.Sprintf("%d", id),
 		Name:        username,
 		Credentials: creds,
 	}, nil
 }
 
 func CreateUser(username string) (*User, error) {
-	id := fmt.Sprintf("%d", time.Now().UnixNano())
-
-	query := `INSERT INTO users (id, username, credentials, created_at)
-			  VALUES ($1, $2, $3, $4)`
+	query := `INSERT INTO users (username, credentials, created_at)
+	          VALUES ($1, $2, $3)
+	          RETURNING id`
 
 	emptyCreds, _ := json.Marshal([]webauthn.Credential{})
 
-	_, err := DB.Exec(query, id, username, emptyCreds, time.Now())
+	var id int64
+	err := DB.QueryRow(query, username, emptyCreds, time.Now()).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
 
 	return &User{
-		ID:          id,
+		ID:          fmt.Sprintf("%d", id),
 		Name:        username,
 		Credentials: []webauthn.Credential{},
 	}, nil
 }
 
 func SaveUser(u *User) error {
+	log.Println("SAVING USER WITH CREDS:", len(u.Credentials))
+
 	credsJSON, _ := json.Marshal(u.Credentials)
 
 	query := `UPDATE users SET credentials=$1 WHERE username=$2`
-	_, err := DB.Exec(query, credsJSON, u.Name)
+	_, err := DB.Exec(query, string(credsJSON), u.Name)
 	return err
 }
 
@@ -99,13 +110,11 @@ func (u *User) AddCredential(cred webauthn.Credential) {
 	u.Credentials = append(u.Credentials, cred)
 }
 
-func CreateSession(userID string, hashedToken string, expiry time.Time) error {
-	id := fmt.Sprintf("%d", time.Now().UnixNano())
+func CreateSession(userID int, hashedToken string, expiry time.Time) error {
+	query := `INSERT INTO sessions (user_id, refresh_token_hash, expires_at, created_at)
+              VALUES ($1, $2, $3, $4)`
 
-	query := `INSERT INTO sessions (id, user_id, refresh_token, expires_at, created_at)
-	          VALUES ($1, $2, $3, $4, $5)`
-
-	_, err := DB.Exec(query, id, userID, hashedToken, expiry, time.Now())
+	_, err := DB.Exec(query, userID, hashedToken, expiry, time.Now())
 	return err
 }
 

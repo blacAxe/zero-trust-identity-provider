@@ -1,18 +1,17 @@
 package handlers
 
 import (
-	"fmt"
-	"net/http"
-	"strings"
-	"time"
-	"os"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
-
-var JwtKey = []byte(os.Getenv("JWT_SECRET"))
 
 type Claims struct {
 	Username string `json:"username"`
@@ -20,20 +19,23 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateAccessToken(username string, role string) (string, error) {
-	expirationTime := time.Now().Add(15 * time.Minute)
+func GenerateAccessToken(username, role string) (string, error) {
+	secret := os.Getenv("JWT_SECRET")
 
-	claims := &Claims{
-		Username: username,
-		Role:     role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-			Issuer:    "zero-trust-idp",
-		},
+	log.Println("SIGNING WITH SECRET:", secret)
+
+	claims := jwt.MapClaims{
+		"username": username,
+		"role":     role,
+		"iss":      "zero-trust-idp",
+		"sub":      username,
+		"exp":      time.Now().Add(15 * time.Minute).Unix(),
+		"iat":      time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(JwtKey)
+
+	return token.SignedString([]byte(secret))
 }
 
 func GenerateRefreshToken() string {
@@ -50,9 +52,8 @@ func JWTMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		authHeader := r.Header.Get("Authorization")
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// Using ParseWithClaims instead of Parse
 		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-			return JwtKey, nil
+			return []byte(os.Getenv("JWT_SECRET")), nil
 		})
 
 		if err != nil {

@@ -39,10 +39,7 @@ func main() {
 	// Create a NEW ServeMux
 	mux := http.NewServeMux()
 
-	// Static Files
-	// Use mux.Handle instead of http.Handle
 	fileServer := http.FileServer(http.Dir("./static"))
-	mux.Handle("/", fileServer)
 
 	// Registration Routes (Registered to mux)
 	mux.HandleFunc("/register/begin", func(w http.ResponseWriter, r *http.Request) {
@@ -60,12 +57,23 @@ func main() {
 		handlers.FinishLogin(w, r, webAuthnInstance)
 	})
 
+	mux.HandleFunc("/api/admin", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("🔥 ADMIN DATA: top secret"))
+	})
+
+	mux.HandleFunc("/api/user", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("👤 USER DATA: general access"))
+	})
+
 	mux.HandleFunc("/auth/refresh", handlers.RefreshToken)
 	mux.HandleFunc("/auth/logout", handlers.Logout)
 
 	// Protected Route
 	// Wrap the secretHandler with JWTMiddleware
 	mux.HandleFunc("/api/secret-data", handlers.JWTMiddleware(secretHandler))
+
+	// Serve frontend (index.html) at root
+	mux.Handle("/", fileServer)
 
 	// Start the server using 'mux'
 	log.Println("Server started at http://localhost:8080")

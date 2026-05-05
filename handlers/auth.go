@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -28,6 +31,8 @@ func BeginLogin(w http.ResponseWriter, r *http.Request, wa *webauthn.WebAuthn) {
 }
 
 func FinishLogin(w http.ResponseWriter, r *http.Request, wa *webauthn.WebAuthn) {
+	log.Println("HIT /login/finish")
+
 	username := r.URL.Query().Get("username")
 
 	// Get the user from DB package
@@ -44,10 +49,13 @@ func FinishLogin(w http.ResponseWriter, r *http.Request, wa *webauthn.WebAuthn) 
 		return
 	}
 
+	log.Println("USER CREDS COUNT:", len(user.Credentials))
+
 	// IMPORTANT: Actually verify the WebAuthn response from the browser
 	// This checks if the hardware signature is valid
 	_, err = wa.FinishLogin(user, *sessionData, r)
 	if err != nil {
+		log.Println("LOGIN ERROR:", err) // 🔥 ADD THIS
 		http.Error(w, "Failed to verify passkey: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -59,11 +67,15 @@ func FinishLogin(w http.ResponseWriter, r *http.Request, wa *webauthn.WebAuthn) 
 	}
 
 	// Generate access token (short-lived)
+	log.Println("IDP JWT SECRET:", os.Getenv("JWT_SECRET"))
+
 	accessToken, err := GenerateAccessToken(user.WebAuthnName(), role)
 	if err != nil {
 		http.Error(w, "Failed to generate access token", http.StatusInternalServerError)
 		return
 	}
+
+	log.Println("ACCESS TOKEN:", accessToken)
 
 	// Generate refresh token (long-lived)
 	refreshToken := GenerateRefreshToken()
@@ -71,12 +83,15 @@ func FinishLogin(w http.ResponseWriter, r *http.Request, wa *webauthn.WebAuthn) 
 	// Hash refresh token before storing
 	hashedToken := HashToken(refreshToken)
 
+	uid, _ := strconv.Atoi(user.ID)
+
 	// Store session in DB
 	err = db.CreateSession(
-		string(user.WebAuthnID()),
+		uid,
 		hashedToken,
-		time.Now().Add(7*24*time.Hour), // 7 days
+		time.Now().Add(7*24*time.Hour),
 	)
+
 	if err != nil {
 		http.Error(w, "Failed to store session", http.StatusInternalServerError)
 		return

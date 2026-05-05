@@ -52,40 +52,44 @@
         }
 
         async function login() {
-    const username = document.getElementById('username').value;
-    if (!username) return alert("Enter a username");
+            const username = document.getElementById('username').value;
+            if (!username) return alert("Enter a username");
 
-    try {
-        // Get Login Options
-        const response = await fetch(`/login/begin?username=${username}`);
-        const options = await response.json();
+            try {
+                const response = await fetch(`/login/begin?username=${username}`);
+                const options = await response.json();
 
-        // Trigger Fingerprint/Passkey
-        const assertion = await webauthnJSON.get(options);
+                // THIS is what worked before
+                const assertion = await webauthnJSON.get(options);
 
-        // Send verification to server
-        const finish = await fetch(`/login/finish?username=${username}`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(assertion)
-        });
+                const finish = await fetch(`/login/finish?username=${username}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(assertion)
+                });
 
-        const data = await finish.json();
+                const text = await finish.text();
 
-        if (data.status === "success") {
-            // Save the token for later
-            localStorage.setItem("jwt_token", data.access_token);
-            localStorage.setItem("refresh_token", data.refresh_token);
-            
-            document.getElementById('status').innerText = `Logged in as ${username}!`;
-            document.getElementById('secret-section').style.display = "block"; 
-            console.log("Token saved to localStorage");
-        } else {
-            alert("Login failed: " + data.message);
-        }
+                try {
+                    const data = JSON.parse(text);
+
+                    if (data.status === "success") {
+                        localStorage.setItem("jwt_token", data.access_token);
+                        localStorage.setItem("refresh_token", data.refresh_token);
+
+                        document.getElementById('status').innerText = `Logged in as ${username}!`;
+                        document.getElementById('secret-section').style.display = "block";
+                    } else {
+                        alert("Login failed: " + data.message);
+                    }
+                } catch {
+                    console.error("RAW RESPONSE:", text);
+                    alert("Login failed: " + text);
+                }
+
             } catch (err) {
                 console.error(err);
-                alert("Error during login. Check console.");
+                alert("Error during login.");
             }
         }
 

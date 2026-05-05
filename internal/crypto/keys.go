@@ -3,9 +3,6 @@ package crypto
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
-	"os"
 )
 
 // GenerateIdPKeys creates a 2048-bit RSA key pair for signing JWTs
